@@ -1,16 +1,81 @@
-import os
-import google.generativeai as genai
-from playwright.sync_api import sync_playwright
-from bs4 import BeautifulSoup
-import json
-
-import time
-import random
+import requests
 
 class Strategist:
     def __init__(self, api_key):
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-2.0-flash')
+
+    # ... (previous methods) ...
+
+    def analyze_competitors(self, urls):
+        """
+        Scrapes competitor URLs to extract outlines (H1-H3).
+        """
+        outlines = []
+        
+        # Try Playwright first
+        try:
+            with sync_playwright() as p:
+                try:
+                    browser = p.chromium.launch(headless=True)
+                except Exception as e:
+                    print(f"Playwright launch failed: {e}. Installing browsers...")
+                    os.system("playwright install chromium")
+                    browser = p.chromium.launch(headless=True)
+                
+                for url in urls:
+                    try:
+                        page = browser.new_page()
+                        page.goto(url, timeout=15000)
+                        content = page.content()
+                        soup = BeautifulSoup(content, 'html.parser')
+                        
+                        h1 = soup.find('h1').get_text().strip() if soup.find('h1') else "No H1"
+                        headings = [h.get_text().strip() for h in soup.find_all(['h2', 'h3'])]
+                        
+                        outlines.append({
+                            "url": url,
+                            "h1": h1,
+                            "structure": headings[:10] # Limit to top 10 headings
+                        })
+                        page.close()
+                    except Exception as e:
+                        print(f"Playwright failed for {url}: {e}")
+                        # Fallback to Requests inside loop
+                        self._scrape_fallback(url, outlines)
+                browser.close()
+                
+        except Exception as e:
+            print(f"Playwright crashed completely: {e}")
+            # Fallback for all URLs if browser fails entirely
+            for url in urls:
+                 self._scrape_fallback(url, outlines)
+
+        return outlines
+
+    def _scrape_fallback(self, url, outlines_list):
+        """Fallback scraper using requests."""
+        try:
+            print(f"Falling back to requests for {url}")
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+            response = requests.get(url, headers=headers, timeout=10)
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            h1 = soup.find('h1').get_text().strip() if soup.find('h1') else "No H1 (Requests)"
+            headings = [h.get_text().strip() for h in soup.find_all(['h2', 'h3'])]
+            
+            outlines_list.append({
+                "url": url,
+                "h1": h1,
+                "structure": headings[:10]
+            })
+        except Exception as e:
+            print(f"Requests fallback failed for {url}: {e}")
+            outlines_list.append({
+                "url": url,
+                "h1": "Error scraping",
+                "structure": [f"Error: {str(e)}"]
+            })
 
     def _generate_with_retry(self, prompt, max_retries=3):
         """Helper to generate content with retry logic for 429 errors."""
