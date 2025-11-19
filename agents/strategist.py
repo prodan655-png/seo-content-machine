@@ -451,6 +451,6 @@ class Strategist:
         """
         
         print(f"Generating {num_personas} personas for {brand_name}...")
-        response = self.model.generate_content(prompt)
+        response = self._generate_with_retry(prompt)
         print(f"Personas Generated (Length: {len(response.text)})")
         return response.text

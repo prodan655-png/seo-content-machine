@@ -583,10 +583,13 @@ elif page == "🔍 Дослідження":
             
             if st.button("📥 Завантажити структури конкурентів"):
                 with st.spinner("Сканую сайти конкурентів..."):
-                    urls = [r['url'] for r in data['competitors']]
-                    outlines = strategist.analyze_competitors(urls)
-                    st.session_state.research_data['competitor_outlines'] = outlines
-                    st.rerun()
+                    try:
+                        urls = [r['url'] for r in data['competitors']]
+                        outlines = strategist.analyze_competitors(urls)
+                        st.session_state.research_data['competitor_outlines'] = outlines
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Не вдалося завантажити структури: {e}")
 
 # --- WRITE ---
 elif page == "✍️ Створення":
