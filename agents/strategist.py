@@ -4,10 +4,27 @@ from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 import json
 
+import time
+import random
+
 class Strategist:
     def __init__(self, api_key):
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-2.0-flash')
+
+    def _generate_with_retry(self, prompt, max_retries=3):
+        """Helper to generate content with retry logic for 429 errors."""
+        for attempt in range(max_retries):
+            try:
+                return self.model.generate_content(prompt)
+            except Exception as e:
+                if "429" in str(e) or "Resource exhausted" in str(e):
+                    if attempt < max_retries - 1:
+                        wait_time = (2 ** attempt) + random.uniform(0, 1)
+                        print(f"⚠️ Rate limit hit. Retrying in {wait_time:.1f}s...")
+                        time.sleep(wait_time)
+                        continue
+                raise e
 
     def analyze_serp(self, topic):
         """
@@ -85,7 +102,7 @@ class Strategist:
 
         # Analyze Intent with Gemini
         prompt = f"Analyze the search intent for the topic '{topic}' in the context of Ukrainian Google Search. Return JSON with keys: 'intent' (Informational/Commercial/Transactional - translate to Ukrainian), 'features' (list of likely SERP features e.g. 'Відео', 'Сніпет', 'Картинки')."
-        response = self.model.generate_content(prompt)
+        response = self._generate_with_retry(prompt)
         try:
             analysis = json.loads(response.text.replace('```json', '').replace('```', ''))
         except:
@@ -104,7 +121,12 @@ class Strategist:
         """
         outlines = []
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            try:
+                browser = p.chromium.launch(headless=True)
+            except Exception as e:
+                print(f"Playwright launch failed: {e}. Installing browsers...")
+                os.system("playwright install chromium")
+                browser = p.chromium.launch(headless=True)
             for url in urls:
                 try:
                     page = browser.new_page()
@@ -133,7 +155,7 @@ class Strategist:
         Uses Gemini to extract entities.
         """
         prompt = f"Extract key entities (products, ingredients, brands, technical terms) from the following text. Return as a JSON list of strings.\n\nText: {text_content[:2000]}"
-        response = self.model.generate_content(prompt)
+        response = self._generate_with_retry(prompt)
         try:
             return json.loads(response.text.replace('```json', '').replace('```', ''))
         except:
@@ -144,7 +166,7 @@ class Strategist:
         Generates FAQ questions based on the topic.
         """
         prompt = f"Generate 5 relevant FAQ questions for the topic '{topic}' that users might ask on Google. Return as a JSON list of strings."
-        response = self.model.generate_content(prompt)
+        response = self._generate_with_retry(prompt)
         try:
             return json.loads(response.text.replace('```json', '').replace('```', ''))
         except:
@@ -239,7 +261,7 @@ class Strategist:
         """
         
         print(f"Generating ToV for {brand_name}...")
-        response = self.model.generate_content(prompt)
+        response = self._generate_with_retry(prompt)
         print(f"ToV Generated (Length: {len(response.text)})")
         return response.text
 
@@ -260,7 +282,7 @@ class Strategist:
         """
         
         print(f"Refining ToV...")
-        response = self.model.generate_content(prompt)
+        response = self._generate_with_retry(prompt)
         print(f"ToV Refined (Length: {len(response.text)})")
         return response.text
 
