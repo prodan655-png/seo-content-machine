@@ -7,6 +7,7 @@ chromadb
 python-dotenv
 lxml
 pandas
+textstat
 
 # Optional: for document parsing
 PyPDF2
