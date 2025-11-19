@@ -19,8 +19,17 @@ from agents.writer import Writer
 from agents.coder import Coder
 
 # Load Env
+# Load Env
 load_dotenv()
+
+# Try to get API Key from multiple sources
 API_KEY = os.getenv("GEMINI_API_KEY")
+if not API_KEY and "GEMINI_API_KEY" in st.secrets:
+    API_KEY = st.secrets["GEMINI_API_KEY"]
+
+# Clean API Key (remove quotes if user added them in secrets)
+if API_KEY:
+    API_KEY = API_KEY.strip().strip('"').strip("'")
 
 # Initialize Utils
 file_manager = FileManager()
