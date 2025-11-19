@@ -19,7 +19,13 @@ class Strategist:
         # Attempt 1: Playwright (Google) - Stealth Mode
         try:
             with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
+                try:
+                    browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
+                except Exception as e:
+                    print(f"Playwright launch failed: {e}. Installing browsers...")
+                    os.system("playwright install chromium")
+                    browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
+                
                 context = browser.new_context(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                 )
