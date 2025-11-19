@@ -8,6 +8,7 @@ python-dotenv
 lxml
 pandas
 textstat
+thefuzz
 
 # Optional: for document parsing
 PyPDF2
