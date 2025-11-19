@@ -1,0 +1,15 @@
+streamlit
+google-generativeai
+playwright
+beautifulsoup4
+requests
+chromadb
+python-dotenv
+lxml
+pandas
+
+# Optional: for document parsing
+PyPDF2
+python-docx
+python-pptx
+markdown
