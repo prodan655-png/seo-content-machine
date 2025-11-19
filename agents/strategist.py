@@ -1,3 +1,8 @@
+import os
+import google.generativeai as genai
+from playwright.sync_api import sync_playwright
+from bs4 import BeautifulSoup
+import json
 import requests
 
 class Strategist:
