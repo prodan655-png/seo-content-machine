@@ -30,11 +30,6 @@ if not API_KEY and "GEMINI_API_KEY" in st.secrets:
 # Clean API Key (remove quotes if user added them in secrets)
 if API_KEY:
     API_KEY = API_KEY.strip().strip('"').strip("'")
-    print(f"DEBUG: API Key loaded. Length: {len(API_KEY)}")
-    print(f"DEBUG: First 4 chars: {API_KEY[:4]}")
-    print(f"DEBUG: Last 4 chars: {API_KEY[-4:]}")
-else:
-    print("DEBUG: API Key NOT found!")
 
 # Initialize Utils
 file_manager = FileManager()
@@ -57,6 +52,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# --- SIDEBAR & NAVIGATION ---
 # --- SIDEBAR & NAVIGATION ---
 st.sidebar.title("🚀 SEO Machine")
 
