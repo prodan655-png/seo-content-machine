@@ -454,3 +454,43 @@ class Strategist:
         response = self._generate_with_retry(prompt)
         print(f"Personas Generated (Length: {len(response.text)})")
         return response.text
+
+    def generate_cjm(self, brand_name, industry, personas_text):
+        """
+        Generates a Customer Journey Map (CJM) in Markdown table format.
+        """
+        prompt = f"""
+        Ти - експерт з Customer Experience. Створи Customer Journey Map (CJM) для бренду.
+        
+        БРЕНД: {brand_name} ({industry})
+        
+        ПЕРСОНИ (АУДИТОРІЯ):
+        {personas_text[:3000]}... (скорочено)
+        
+        ЗАВДАННЯ:
+        Створи CJM у вигляді Markdown таблиці.
+        
+        Етапи (Стовпці):
+        1. Усвідомлення (Awareness)
+        2. Розгляд (Consideration)
+        3. Придбання (Purchase)
+        4. Утримання (Retention)
+        5. Адвокація (Advocacy)
+        
+        Виміри (Рядки):
+        - Цілі клієнта (User Goals)
+        - Точки контакту (Touchpoints)
+        - Емоції (Emotions - використовуй емодзі)
+        - Бар'єри (Barriers)
+        - Можливості для бренду (Opportunities)
+        
+        ВАЖЛИВО:
+        - Відповідь має містити ТІЛЬКИ Markdown таблицю.
+        - Мова: УКРАЇНСЬКА.
+        - Будь конкретним для цієї ніші.
+        """
+        
+        print(f"Generating CJM for {brand_name}...")
+        response = self._generate_with_retry(prompt)
+        print(f"CJM Generated (Length: {len(response.text)})")
+        return response.text

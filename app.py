@@ -646,21 +646,6 @@ elif page == "✍️ Створення":
                     mime="text/html"
                 )
 
-# --- SETTINGS ---
-elif page == "⚙️ Налаштування":
-    st.title("⚙️ Налаштування Проекту")
-    
-    # Tabs for different settings
-    tab1, tab2, tab3 = st.tabs(["📝 Tone of Voice", "👥 Персони", "🖼️ Асети"])
-    
-    with tab1:
-        st.subheader("Редагування Tone of Voice")
-        tov_content = st.text_area("Tone of Voice", value=tov, height=400, key="tov_settings")
-        if st.button("💾 Зберегти ToV"):
-            file_manager.write_file(selected_project, "tov.md", tov_content)
-            st.success("ToV збережено!")
-            st.rerun()
-    
     with tab2:
         st.subheader("Персони вашої аудиторії")
         
