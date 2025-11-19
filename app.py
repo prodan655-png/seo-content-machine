@@ -646,6 +646,21 @@ elif page == "✍️ Створення":
                     mime="text/html"
                 )
 
+# --- SETTINGS ---
+elif page == "⚙️ Налаштування":
+    st.title("⚙️ Налаштування Проекту")
+    
+    # Tabs for different settings
+    tab1, tab2, tab3, tab4 = st.tabs(["📢 Tone of Voice", "👥 Персони", "🖼️ Асети", "🗺️ CJM"])
+    
+    with tab1:
+        st.subheader("Редагування Tone of Voice")
+        tov_content = st.text_area("Tone of Voice", value=tov, height=400, key="tov_settings")
+        if st.button("💾 Зберегти ToV"):
+            file_manager.write_file(selected_project, "tov.md", tov_content)
+            st.success("ToV збережено!")
+            st.rerun()
+    
     with tab2:
         st.subheader("Персони вашої аудиторії")
         
@@ -721,3 +736,49 @@ elif page == "✍️ Створення":
                     if st.button("🗑️", key=f"del_{asset}"):
                         file_manager.delete_asset(selected_project, asset)
                         st.rerun()
+
+    with tab4:
+        st.subheader("🗺️ Customer Journey Map (CJM)")
+        st.info("Карта шляху клієнта допомагає зрозуміти досвід користувача на кожному етапі.")
+        
+        # Load config for CJM
+        try:
+            import json
+            config_path = file_manager.get_project_path(selected_project) / "config.json"
+            if config_path.exists():
+                config = json.loads(config_path.read_text(encoding="utf-8"))
+                current_cjm = config.get("cjm", "")
+                
+                if current_cjm:
+                    st.markdown(current_cjm)
+                    
+                    with st.expander("✏️ Редагувати CJM"):
+                        new_cjm = st.text_area("Markdown CJM", value=current_cjm, height=400)
+                        if st.button("💾 Зберегти CJM"):
+                            config["cjm"] = new_cjm
+                            config_path.write_text(json.dumps(config, indent=4, ensure_ascii=False), encoding="utf-8")
+                            st.success("CJM оновлено!")
+                            st.rerun()
+                else:
+                    st.write("CJM ще не створено.")
+                    if st.button("✨ Згенерувати CJM (ШІ)"):
+                        if not config.get("audience"):
+                            st.error("Спочатку створіть Персони (вкладка 'Персони')!")
+                        else:
+                            with st.spinner("Аналізую шлях клієнта..."):
+                                try:
+                                    cjm = strategist.generate_cjm(
+                                        config.get("brand_name"),
+                                        config.get("industry"),
+                                        config.get("audience")
+                                    )
+                                    config["cjm"] = cjm
+                                    config_path.write_text(json.dumps(config, indent=4, ensure_ascii=False), encoding="utf-8")
+                                    st.success("CJM створено!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Помилка: {e}")
+            else:
+                st.warning("Конфігурація проекту не знайдена.")
+        except Exception as e:
+            st.error(f"Помилка завантаження CJM: {e}")
