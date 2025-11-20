@@ -16,56 +16,126 @@ class Coder:
         soup = BeautifulSoup(html, 'html.parser')
         
         # Apply Reference Patterns (Basic implementation: mimic table classes)
-        ref_soup = BeautifulSoup(reference_html, 'html.parser')
-        ref_table = ref_soup.find('table')
-        if ref_table:
-            table_classes = ref_table.get('class', [])
-            for table in soup.find_all('table'):
-                table['class'] = table_classes
+        if reference_html:
+            ref_soup = BeautifulSoup(reference_html, 'html.parser')
+            ref_table = ref_soup.find('table')
+            if ref_table:
+                table_classes = ref_table.get('class', [])
+                for table in soup.find_all('table'):
+                    table['class'] = table_classes
 
         # CMS Specifics
-        if cms_type == "OpenCart":
-            # Wrap in container if needed, or specific classes
-            # Example: Ensure images are responsive
+        if cms_type.lower() == "opencart":
+            # 1. Wrap images in <div class="img-responsive">
             for img in soup.find_all('img'):
+                # Check if already wrapped (to avoid double wrapping if run multiple times)
+                if img.parent.name == 'div' and 'img-responsive' in img.parent.get('class', []):
+                    continue
+                    
+                new_div = soup.new_tag("div", **{"class": "img-responsive"})
+                img.wrap(new_div)
+                # Also add class to img itself if needed, but usually wrapper is enough for OC
                 img['class'] = img.get('class', []) + ['img-responsive']
+
+            # 2. Wrap tables in <div class="table-responsive">
+            for table in soup.find_all('table'):
+                if table.parent.name == 'div' and 'table-responsive' in table.parent.get('class', []):
+                    continue
+                new_div = soup.new_tag("div", **{"class": "table-responsive"})
+                table.wrap(new_div)
+                # Add Bootstrap table classes common in OC
+                table['class'] = table.get('class', []) + ['table', 'table-bordered', 'table-hover']
+
+            # 3. STRIP <script> and <iframe>
+            for tag in soup(["script", "iframe"]):
+                tag.decompose()
         
         return str(soup)
 
     def inject_internal_links(self, html_content, brand_name):
         """
         Scans text for opportunities to link to existing pages using Vector DB.
+        Strategy: Exact match of Page Titles from Knowledge Base.
         """
         soup = BeautifulSoup(html_content, 'html.parser')
-        # This is a simplified approach. A full approach would iterate over text nodes.
-        # For MVP, let's try to link the first occurrence of highly relevant terms.
         
-        # Get all text nodes
+        # 1. Get all known pages
+        try:
+            all_pages = self.vector_db.get_all_pages(brand_name)
+        except Exception as e:
+            # print(f"VectorDB Error: {e}")
+            return html_content
+
+        if not all_pages:
+            return html_content
+
+        # Sort by length (descending) to match longest phrases first
+        # Filter out very short titles to avoid accidental matching of common words
+        link_candidates = sorted(
+            [p for p in all_pages if len(p.get('title', '')) > 4], 
+            key=lambda x: len(x['title']), 
+            reverse=True
+        )
+        
+        # Track added links to avoid duplicates per page
+        added_urls = set()
+
+        # 2. Iterate over text nodes
         for text_node in soup.find_all(string=True):
-            if text_node.parent.name in ['a', 'h1', 'h2', 'h3', 'script', 'style']:
+            if text_node.parent.name in ['a', 'h1', 'h2', 'h3', 'script', 'style', 'code', 'pre']:
                 continue
             
             text = text_node.string
-            if not text or len(text) < 10:
+            if not text:
                 continue
-
-            # Query Vector DB for this text chunk to see if there's a relevant page
-            # In reality, we'd extract keywords first. 
-            # For MVP, let's just skip complex NLP here and rely on manual linking or 
-            # simple keyword matching if we had a keyword list.
-            # Since we have VectorDB, let's query it with the whole sentence? No, too broad.
-            # Let's query with the first 5 words.
-            query = " ".join(text.split()[:5])
-            results = self.vector_db.query_similar(brand_name, query, n_results=1)
+                
+            # Check for matches
+            # Note: Modifying the tree while iterating is tricky. 
+            # We will do a simple replacement if we find a match and stop for this node 
+            # (to avoid nesting links or complex overlaps for MVP).
             
-            if results:
-                target = results[0]
-                # Check if target title is in text (exact match)
-                if target['title'] and target['title'].lower() in text.lower():
-                    # Replace logic would go here. 
-                    # Complex to do safely on raw string without breaking HTML.
-                    # Skipping auto-replacement for MVP to avoid breaking text.
-                    pass
+            for page in link_candidates:
+                title = page['title']
+                url = page['url']
+                
+                if url in added_urls:
+                    continue
+                    
+                # Case-insensitive search
+                start_index = text.lower().find(title.lower())
+                if start_index != -1:
+                    # Found a match!
+                    original_text = text[start_index : start_index + len(title)]
+                    
+                    # Create new link tag
+                    new_tag = soup.new_tag("a", href=url)
+                    new_tag.string = original_text
+                    new_tag['title'] = title
+                    
+                    # Split text node
+                    before_text = text[:start_index]
+                    after_text = text[start_index + len(title):]
+                    
+                    # Replace text_node with: before_text + link + after_text
+                    # We need to insert these into the parent
+                    parent = text_node.parent
+                    
+                    if before_text:
+                        parent.insert(parent.index(text_node), before_text)
+                    
+                    parent.insert(parent.index(text_node), new_tag)
+                    
+                    if after_text:
+                        # We need to insert after the link. 
+                        # But wait, if we insert after, we might want to process it again?
+                        # For MVP, let's just insert it and move on.
+                        parent.insert(parent.index(text_node), after_text)
+                    
+                    # Remove original node
+                    text_node.extract()
+                    
+                    added_urls.add(url)
+                    break # Move to next text node (or stop processing this one since it's gone)
         
         return str(soup)
 

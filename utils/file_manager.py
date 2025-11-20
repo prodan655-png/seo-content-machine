@@ -70,3 +70,11 @@ class FileManager:
         if asset_dir.exists():
             return [f.name for f in asset_dir.iterdir() if f.is_file()]
         return []
+    
+    def delete_project(self, brand_name):
+        """Deletes a project folder and all its contents."""
+        project_path = self.base_dir / brand_name
+        if project_path.exists():
+            shutil.rmtree(project_path)
+            return True
+        return False

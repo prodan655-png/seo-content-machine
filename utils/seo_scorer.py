@@ -31,16 +31,22 @@ def calculate_seo_score(html_content, target_keywords, tov_rules):
         feedback.append("No target keywords provided for scoring.")
 
     # 2. Readability (20 points)
-    # Flesch Reading Ease: 60-70 is standard.
-    reading_ease = textstat.flesch_reading_ease(text_content)
-    if 50 <= reading_ease <= 80:
+    # Textstat often fails for Cyrillic. We'll use average sentence length as a proxy.
+    sentences = [s for s in text_content.replace('!', '.').replace('?', '.').split('.') if len(s.strip()) > 5]
+    if not sentences:
+        avg_sentence_length = 0
+    else:
+        avg_sentence_length = len(text_content.split()) / len(sentences)
+    
+    # Optimal length: 10-20 words per sentence
+    if 10 <= avg_sentence_length <= 25:
         score += 20
-    elif reading_ease > 80: # Too simple?
+    elif avg_sentence_length < 10: # Too simple?
         score += 15
-        feedback.append("Text might be too simple.")
+        feedback.append("Text might be too simple (short sentences).")
     else: # Too hard
         score += 10
-        feedback.append(f"Text is hard to read (Score: {reading_ease}). Aim for 60-70.")
+        feedback.append(f"Text is hard to read (Avg {int(avg_sentence_length)} words/sentence). Aim for 15-20.")
 
     # 3. HTML Structure (30 points)
     # Check H1
@@ -76,5 +82,7 @@ def calculate_seo_score(html_content, target_keywords, tov_rules):
 
     return {
         "score": int(score),
-        "feedback": feedback
+        "feedback": feedback,
+        "readability_score": int(avg_sentence_length) if sentences else 0,
+        "missing_keywords": missing_keywords
     }

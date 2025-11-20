@@ -1,14 +1,15 @@
 import os
-import google.generativeai as genai
+from utils.ai_handler import AIHandler
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 import json
 import requests
+import time
+import random
 
 class Strategist:
     def __init__(self, api_key):
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-2.0-flash')
+        self.ai_handler = AIHandler(api_key, model_name="gemini-2.5-flash")
 
     # ... (previous methods) ...
 
@@ -24,7 +25,8 @@ class Strategist:
                 try:
                     browser = p.chromium.launch(headless=True)
                 except Exception as e:
-                    print(f"Playwright launch failed: {e}. Installing browsers...")
+                    # print(f"Playwright launch failed: {e}. Installing browsers...")
+                    pass
                     os.system("playwright install chromium")
                     browser = p.chromium.launch(headless=True)
                 
@@ -45,13 +47,13 @@ class Strategist:
                         })
                         page.close()
                     except Exception as e:
-                        print(f"Playwright failed for {url}: {e}")
+                        # print(f"Playwright failed for {url}: {e}")
                         # Fallback to Requests inside loop
                         self._scrape_fallback(url, outlines)
                 browser.close()
                 
         except Exception as e:
-            print(f"Playwright crashed completely: {e}")
+            # print(f"Playwright crashed completely: {e}")
             # Fallback for all URLs if browser fails entirely
             for url in urls:
                  self._scrape_fallback(url, outlines)
@@ -61,7 +63,7 @@ class Strategist:
     def _scrape_fallback(self, url, outlines_list):
         """Fallback scraper using requests."""
         try:
-            print(f"Falling back to requests for {url}")
+            # print(f"Falling back to requests for {url}")
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
             response = requests.get(url, headers=headers, timeout=10)
             soup = BeautifulSoup(response.content, 'html.parser')
@@ -75,32 +77,88 @@ class Strategist:
                 "structure": headings[:10]
             })
         except Exception as e:
-            print(f"Requests fallback failed for {url}: {e}")
+            # print(f"Requests fallback failed for {url}: {e}")
             outlines_list.append({
                 "url": url,
                 "h1": "Error scraping",
                 "structure": [f"Error: {str(e)}"]
             })
 
-    def _generate_with_retry(self, prompt, max_retries=3):
-        """Helper to generate content with retry logic for 429 errors."""
-        for attempt in range(max_retries):
-            try:
-                return self.model.generate_content(prompt)
-            except Exception as e:
-                if "429" in str(e) or "Resource exhausted" in str(e):
-                    if attempt < max_retries - 1:
-                        wait_time = (2 ** attempt) + random.uniform(0, 1)
-                        print(f"⚠️ Rate limit hit. Retrying in {wait_time:.1f}s...")
-                        time.sleep(wait_time)
-                        continue
-                raise e
+    def generate_topic_ideas(self, niche, num_topics=10, context_data=None):
+        """
+        Generates topic ideas for a given niche, optionally using context (competitors/sitemap).
+        
+        Args:
+            niche: The niche/industry
+            num_topics: Number of topics
+            context_data: Optional string containing competitor headers or sitemap titles
+        """
+        context_prompt = ""
+        if context_data:
+            context_prompt = f"Based on the following competitor/existing content analysis:\n{context_data[:5000]}\n\n"
+
+        prompt = f"""
+        You are an SEO content strategist. Generate {num_topics} article topic ideas for the niche: "{niche}".
+        
+        {context_prompt}
+        
+        Requirements:
+        - Topics should be SEO-friendly and address user search intent
+        - Mix informational, commercial, and transactional intents
+        - Include long-tail keywords where appropriate
+        - Make titles compelling and click-worthy
+        - Write in Ukrainian language
+        
+        Return as JSON array with format:
+        [
+            {{"title": "Topic Title", "description": "Brief description of what the article would cover"}}
+        ]
+        
+        JSON ONLY. NO MARKDOWN.
+        """
+        
+        try:
+            response = self.ai_handler.generate_content(prompt)
+            topics = json.loads(response.text.replace('```json', '').replace('```', ''))
+            return topics if isinstance(topics, list) else []
+        except Exception as e:
+            return [{"title": f"Тема {i+1} для {niche}", "description": "Опис недоступний"} for i in range(num_topics)]
+
+    def generate_keywords(self, topic, num_keywords=20):
+        """
+        Generates SEO keywords for a topic.
+        """
+        prompt = f"""
+        Generate {num_keywords} SEO keywords for the topic: "{topic}".
+        Include a mix of:
+        - Head terms (high volume)
+        - Long-tail keywords (specific intent)
+        - LSI keywords (semantically related)
+        
+        Return as a JSON list of objects:
+        [
+            {{"keyword": "keyword 1", "type": "Head"}},
+            {{"keyword": "keyword 2", "type": "Long-tail"}},
+            ...
+        ]
+        
+        Language: Ukrainian.
+        JSON ONLY.
+        """
+        try:
+            response = self.ai_handler.generate_content(prompt)
+            return json.loads(response.text.replace('```json', '').replace('```', ''))
+        except:
+            return [{"keyword": topic, "type": "Head"}]
+
+
+
 
     def analyze_serp(self, topic):
         """
         Analyzes SERP for intent and features.
         """
-        print(f"Analyzing SERP for: {topic}")
+        # print(f"Analyzing SERP for: {topic}")
         results = []
         
         # Attempt 1: Playwright (Google) - Stealth Mode
@@ -109,7 +167,7 @@ class Strategist:
                 try:
                     browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
                 except Exception as e:
-                    print(f"Playwright launch failed: {e}. Installing browsers...")
+                    # print(f"Playwright launch failed: {e}. Installing browsers...")
                     os.system("playwright install chromium")
                     browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
                 
@@ -118,7 +176,7 @@ class Strategist:
                 )
                 page = context.new_page()
                 
-                print(f"Attempt 1: Scraping Google for: {topic}")
+                # print(f"Attempt 1: Scraping Google for: {topic}")
                 try:
                     page.goto(f"https://www.google.com/search?q={topic}", timeout=10000)
                     page.wait_for_load_state("domcontentloaded")
@@ -134,15 +192,17 @@ class Strategist:
                         except:
                             continue
                 except Exception as e:
-                    print(f"Google scrape failed: {e}")
+                    # print(f"Google scrape failed: {e}")
+                    pass
 
                 browser.close()
         except Exception as e:
-            print(f"Playwright Google failed: {e}")
+            # print(f"Playwright Google failed: {e}")
+            pass
 
         # Attempt 2: Requests (DuckDuckGo HTML) - Very Robust Fallback
         if not results:
-            print("Attempt 2: Using DuckDuckGo HTML (Requests)...")
+            # print("Attempt 2: Using DuckDuckGo HTML (Requests)...")
             try:
                 import requests
                 headers = {
@@ -160,11 +220,12 @@ class Strategist:
                         if url and title:
                             results.append({"url": url, "title": title})
             except Exception as e:
-                print(f"DDG Requests failed: {e}")
+                # print(f"DDG Requests failed: {e}")
+                pass
 
         # Attempt 3: Simulation (Last Resort)
         if not results:
-            print("All scraping failed. Returning empty list to trigger manual input or retry.")
+            # print("All scraping failed. Returning empty list to trigger manual input or retry.")
             # Do NOT return fake data anymore, it confuses the user.
             # Let's return a specific error-like result so the UI can show a warning but not fake info.
             results = [] 
@@ -172,7 +233,7 @@ class Strategist:
 
         # Analyze Intent with Gemini
         prompt = f"Analyze the search intent for the topic '{topic}' in the context of Ukrainian Google Search. Return JSON with keys: 'intent' (Informational/Commercial/Transactional - translate to Ukrainian), 'features' (list of likely SERP features e.g. 'Відео', 'Сніпет', 'Картинки')."
-        response = self._generate_with_retry(prompt)
+        response = self.ai_handler.generate_content(prompt)
         try:
             analysis = json.loads(response.text.replace('```json', '').replace('```', ''))
         except:
@@ -194,7 +255,7 @@ class Strategist:
             try:
                 browser = p.chromium.launch(headless=True)
             except Exception as e:
-                print(f"Playwright launch failed: {e}. Installing browsers...")
+                # print(f"Playwright launch failed: {e}. Installing browsers...")
                 os.system("playwright install chromium")
                 browser = p.chromium.launch(headless=True)
             for url in urls:
@@ -216,7 +277,8 @@ class Strategist:
                     })
                     page.close()
                 except Exception as e:
-                    print(f"Error scraping {url}: {e}")
+                    # print(f"Error scraping {url}: {e}")
+                    pass
             browser.close()
         return outlines
 
@@ -225,7 +287,7 @@ class Strategist:
         Uses Gemini to extract entities.
         """
         prompt = f"Extract key entities (products, ingredients, brands, technical terms) from the following text. Return as a JSON list of strings.\n\nText: {text_content[:2000]}"
-        response = self._generate_with_retry(prompt)
+        response = self.ai_handler.generate_content(prompt)
         try:
             return json.loads(response.text.replace('```json', '').replace('```', ''))
         except:
@@ -236,7 +298,7 @@ class Strategist:
         Generates FAQ questions based on the topic.
         """
         prompt = f"Generate 5 relevant FAQ questions for the topic '{topic}' that users might ask on Google. Return as a JSON list of strings."
-        response = self._generate_with_retry(prompt)
+        response = self.ai_handler.generate_content(prompt)
         try:
             return json.loads(response.text.replace('```json', '').replace('```', ''))
         except:
@@ -258,7 +320,7 @@ class Strategist:
                     context = f"Контент сайту:\n{text}\n\n"
                     browser.close()
             except Exception as e:
-                print(f"ToV Scraping failed: {e}")
+                # print(f"ToV Scraping failed: {e}")
                 context = "Could not scrape website. "
         
         # Add uploaded documents context
@@ -277,7 +339,8 @@ class Strategist:
                         
                     docs_context += f"\n--- {doc['name']} ---\n{text[:5000]}\n"  # Increased limit to 5000 chars
                 except Exception as e:
-                    print(f"Error parsing {doc['name']}: {e}")
+                    # print(f"Error parsing {doc['name']}: {e}")
+                    pass
             context += docs_context
 
         prompt = f"""
@@ -330,9 +393,9 @@ class Strategist:
         - Якщо матеріали суперечать один одному, надавай пріоритет завантаженим документам.
         """
         
-        print(f"Generating ToV for {brand_name}...")
-        response = self._generate_with_retry(prompt)
-        print(f"ToV Generated (Length: {len(response.text)})")
+        # print(f"Generating ToV for {brand_name}...")
+        response = self.ai_handler.generate_content(prompt)
+        # print(f"ToV Generated (Length: {len(response.text)})")
         return response.text
 
     def refine_tov(self, current_tov, instructions):
@@ -351,9 +414,9 @@ class Strategist:
         Output the updated ToV in Markdown. Keep the same structure if possible, but apply the requested changes. Language: Ukrainian.
         """
         
-        print(f"Refining ToV...")
-        response = self._generate_with_retry(prompt)
-        print(f"ToV Refined (Length: {len(response.text)})")
+        # print(f"Refining ToV...")
+        response = self.ai_handler.generate_content(prompt)
+        # print(f"ToV Refined (Length: {len(response.text)})")
         return response.text
 
     def generate_audience(self, brand_name, industry, url=None, business_model="B2C", num_personas=2):
@@ -371,7 +434,7 @@ class Strategist:
                     context = f"Контент сайту:\n{text}\n\n"
                     browser.close()
             except Exception as e:
-                print(f"Audience scraping failed: {e}")
+                # print(f"Audience scraping failed: {e}")
                 context = ""
 
         # Extract business model type
@@ -450,9 +513,9 @@ class Strategist:
         - Вся відповідь УКРАЇНСЬКОЮ мовою!
         """
         
-        print(f"Generating {num_personas} personas for {brand_name}...")
-        response = self._generate_with_retry(prompt)
-        print(f"Personas Generated (Length: {len(response.text)})")
+        # print(f"Generating {num_personas} personas for {brand_name}...")
+        response = self.ai_handler.generate_content(prompt)
+        # print(f"Personas Generated (Length: {len(response.text)})")
         return response.text
 
     def generate_cjm(self, brand_name, industry, personas_text):
@@ -490,9 +553,9 @@ class Strategist:
         - Будь конкретним для цієї ніші.
         """
         
-        print(f"Generating CJM for {brand_name}...")
-        response = self._generate_with_retry(prompt)
-        print(f"CJM Generated (Length: {len(response.text)})")
+        # print(f"Generating CJM for {brand_name}...")
+        response = self.ai_handler.generate_content(prompt)
+        # print(f"CJM Generated (Length: {len(response.text)})")
         return response.text
 
     def analyze_competitor_tov(self, url):
@@ -500,7 +563,7 @@ class Strategist:
         Analyzes a competitor's website to extract their Tone of Voice.
         Returns a JSON object with emotional_tone, formality_level, unique_trait, values.
         """
-        print(f"Analyzing Competitor ToV: {url}")
+        # print(f"Analyzing Competitor ToV: {url}")
         text_content = ""
         
         # 1. Scrape Content (Robust Method)
@@ -518,7 +581,7 @@ class Strategist:
                     text_content = page.inner_text('body')[:10000] # Get more text for analysis
                     page.close()
                 except Exception as e:
-                    print(f"Playwright failed for {url}: {e}")
+                    # print(f"Playwright failed for {url}: {e}")
                     # Fallback to Requests
                     try:
                         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
@@ -526,12 +589,12 @@ class Strategist:
                         soup = BeautifulSoup(resp.content, 'html.parser')
                         text_content = soup.get_text(separator=' ', strip=True)[:10000]
                     except Exception as e2:
-                        print(f"Requests fallback failed: {e2}")
+                        # print(f"Requests fallback failed: {e2}")
                         return {"error": "Could not scrape website"}
                 finally:
                     browser.close()
         except Exception as e:
-            print(f"Scraping crashed: {e}")
+            # print(f"Scraping crashed: {e}")
             return {"error": str(e)}
 
         if not text_content:
@@ -546,15 +609,15 @@ class Strategist:
         
         TASK:
         Return a JSON object with the following keys (values must be in UKRAINIAN):
-        - "emotional_tone": (e.g., "Дружній", "Професійний", "Зухвалий", "Турботливий")
-        - "formality_level": (e.g., "Низький (на 'ти')", "Середній", "Високий (на 'Ви')")
+        - "emotional_tone": Choose ONE from: ["Нейтральний", "Дружній", "Серйозний", "Веселий", "Натхненний", "Експертний"]
+        - "formality_level": Choose ONE from: ["Дуже офіційний", "Офіційний", "Середній", "Нейтральний", "Дружній", "Дуже дружній"]
         - "unique_trait": (e.g., "Використання сленгу", "Науковий підхід", "Гумор", "Мінімалізм")
         - "values": (list of 3 key values inferred from text)
         
         JSON ONLY. NO MARKDOWN.
         """
         
-        response = self._generate_with_retry(prompt)
+        response = self.ai_handler.generate_content(prompt)
         try:
             return json.loads(response.text.replace('```json', '').replace('```', ''))
         except:

@@ -13,6 +13,8 @@ from utils.file_manager import FileManager
 from utils.vector_db import VectorDB
 from utils.sitemap_parser import ingest_sitemap
 from utils.seo_scorer import calculate_seo_score
+from utils.state_manager import save_state, load_state
+from utils.keyword_loader import load_keywords_from_csv
 
 from agents.strategist import Strategist
 from agents.writer import Writer
@@ -53,25 +55,31 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- SIDEBAR & NAVIGATION ---
-# --- SIDEBAR & NAVIGATION ---
-st.sidebar.title("🚀 SEO Machine")
+from components.sidebar import render_sidebar
 
-# Project Selection Logic
-projects = file_manager.list_projects()
-
-# Session State for Project Selection
+# Persistence: Load last selected project
+PERSISTENCE_FILE = "last_session.json"
 if 'selected_project' not in st.session_state:
-    st.session_state['selected_project'] = projects[0] if projects else None
+    if os.path.exists(PERSISTENCE_FILE):
+        try:
+            with open(PERSISTENCE_FILE, 'r') as f:
+                data = json.load(f)
+                saved_project = data.get('selected_project')
+                # Verify project still exists
+                if saved_project in file_manager.list_projects():
+                    st.session_state['selected_project'] = saved_project
+        except:
+            pass
 
-# Project Selector
-project_options = ["Create New..."] + projects
-# Find index of current selection
-try:
-    index = project_options.index(st.session_state['selected_project']) if st.session_state['selected_project'] in project_options else 0
-except ValueError:
-    index = 0
+selected_option = render_sidebar(file_manager)
 
-selected_option = st.sidebar.selectbox("Select Project", project_options, index=index)
+# Persistence: Save selected project
+if selected_option and selected_option != "Create New...":
+    try:
+        with open(PERSISTENCE_FILE, 'w') as f:
+            json.dump({"selected_project": selected_option}, f)
+    except:
+        pass
 
 if selected_option == "Create New...":
     st.title("✨ Створення Нового Проекту")
@@ -521,15 +529,7 @@ else:
         st.session_state['selected_project'] = selected_option
         st.rerun()
 
-
-
-
-
 selected_project = st.session_state['selected_project']
-
-# Load Project Data
-tov = file_manager.read_file(selected_project, "tov.md")
-assets = file_manager.get_asset_names(selected_project)
 
 # Navigation
 st.sidebar.title("Меню")
@@ -547,266 +547,21 @@ if 'current_project' not in st.session_state:
 
 # --- DASHBOARD ---
 if page == "📊 Дашборд":
-    st.title("📊 Панель Керування")
-    st.markdown(f"### Поточний проект: **{selected_project}**")
-    
-    # Real Metrics
-    project_path = file_manager.get_project_path(selected_project)
-    total_files = len(list(project_path.glob("*.*")))
-    assets_count = len(assets)
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Файлів у проекті", str(total_files))
-    with col2:
-        st.metric("Асетів (Зображень)", str(assets_count))
-    with col3:
-        st.metric("Статус ToV", "✅ Заповнено" if len(tov) > 50 else "⚠️ Порожньо")
+    from modules.dashboard import render_dashboard
+    assets = file_manager.get_asset_names(selected_project)
+    render_dashboard(selected_project, file_manager, assets)
 
 # --- RESEARCH ---
 elif page == "🔍 Дослідження":
-    st.title("🕵️ Аналіз Конкурентів")
-    
-    with st.form(key='search_form'):
-        col1, col2 = st.columns([3, 1], vertical_alignment="bottom")
-        with col1:
-            topic = st.text_input("Введіть тему", placeholder="напр. Пресовані дріжджі")
-        with col2:
-            analyze_btn = st.form_submit_button("🚀 Аналізувати", use_container_width=True)
-    
-    if analyze_btn:
-        if not API_KEY:
-            st.error("⚠️ API Key не знайдено! Перевірте .env файл.")
-        else:
-            with st.spinner(f"Аналізую видачу для: {topic}..."):
-                try:
-                    serp_data = strategist.analyze_serp(topic)
-                    st.session_state.research_data = serp_data
-                    st.success(f"Аналіз завершено: {topic}")
-                except Exception as e:
-                    st.error(f"Помилка аналізу: {e}")
-
-    if st.session_state.research_data:
-        data = st.session_state.research_data
-        
-        # Intent & Features
-        c1, c2 = st.columns(2)
-        with c1:
-            st.info(f"**Інтент (Намір):** {data.get('intent', 'Не визначено')}")
-        with c2:
-            feats = ", ".join(data.get('serp_features', []))
-            st.warning(f"**SERP Фічі:** {feats if feats else 'Немає особливих фіч'}")
-        
-        st.subheader("🔍 Інсайти з Конкурентів")
-        
-        # Competitors Accordion
-        if data.get('competitor_outlines'):
-            for comp in data['competitor_outlines']:
-                with st.expander(f"📄 {comp.get('h1', 'No Title')} ({comp['url']})"):
-                    st.write("**Структура:**")
-                    for h in comp.get('structure', []):
-                        st.text(h)
-        else:
-            st.info("Детальні аутлайни конкурентів ще не завантажені. Натисніть кнопку нижче.")
-            
-            if st.button("📥 Завантажити структури конкурентів"):
-                with st.spinner("Сканую сайти конкурентів..."):
-                    try:
-                        urls = [r['url'] for r in data['competitors']]
-                        outlines = strategist.analyze_competitors(urls)
-                        st.session_state.research_data['competitor_outlines'] = outlines
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Не вдалося завантажити структури: {e}")
+    from modules.research import render_research
+    render_research(selected_project, strategist, API_KEY, file_manager)
 
 # --- WRITE ---
 elif page == "✍️ Створення":
-    st.title("✍️ Генератор Контенту")
-    
-    if not st.session_state.research_data:
-        st.warning("⚠️ Спочатку проведіть дослідження у вкладці '🔍 Дослідження'!")
-    else:
-        st.markdown(f"### Тема: {st.session_state.research_data['topic']}")
-        
-        # Step 1: Outline
-        if st.button("📝 Згенерувати План (Outline)"):
-            with st.spinner("Створюю структуру статті..."):
-                # Load ToV
-                tov = file_manager.get_tov(selected_project)
-                outline = writer.generate_outline(st.session_state.research_data, tov)
-                st.session_state.current_outline = outline
-                st.rerun()
-        
-        if st.session_state.current_outline:
-            st.subheader("Редагування Плану")
-            # Editable JSON is okay for MVP, maybe a better UI later
-            edited_outline = st.data_editor(
-                st.session_state.current_outline,
-                num_rows="dynamic",
-                use_container_width=True
-            )
-            
-            if st.button("✅ Затвердити План і Написати Статтю", use_container_width=True):
-                with st.spinner("Пишу статтю (це може зайняти хвилину)..."):
-                    tov = file_manager.get_tov(selected_project)
-                    keywords = ["дріжджі", "випічка", "рецепт"] # TODO: Load from semantic_core.csv
-                    article = writer.write_article(edited_outline, tov, keywords)
-                    st.session_state.generated_article = article
-                    st.rerun()
-
-        # Step 2: Article Review
-        if st.session_state.generated_article:
-            st.divider()
-            st.subheader("📄 Готова Стаття")
-            tab1, tab2 = st.tabs(["👁️ Попередній перегляд", "💻 HTML Код"])
-            
-            with tab1:
-                st.markdown(st.session_state.generated_article)
-            
-            with tab2:
-                html_content = coder.convert_to_html(st.session_state.generated_article)
-                st.code(html_content, language='html')
-                
-                st.download_button(
-                    label="💾 Завантажити HTML",
-                    data=html_content,
-                    file_name=f"{st.session_state.research_data['topic']}.html",
-                    mime="text/html"
-                )
+    from modules.write import render_write
+    render_write(selected_project, writer, coder, file_manager)
 
 # --- SETTINGS ---
 elif page == "⚙️ Налаштування":
-    st.title("⚙️ Налаштування Проекту")
-    
-    # Tabs for different settings
-    tab1, tab2, tab3, tab4 = st.tabs(["📢 Tone of Voice", "👥 Персони", "🖼️ Асети", "🗺️ CJM"])
-    
-    with tab1:
-        st.subheader("Редагування Tone of Voice")
-        tov_content = st.text_area("Tone of Voice", value=tov, height=400, key="tov_settings")
-        if st.button("💾 Зберегти ToV"):
-            file_manager.write_file(selected_project, "tov.md", tov_content)
-            st.success("ToV збережено!")
-            st.rerun()
-    
-    with tab2:
-        st.subheader("Персони вашої аудиторії")
-        
-        # Load config to get personas
-        try:
-            import json
-            config_path = file_manager.get_project_path(selected_project) / "config.json"
-            if config_path.exists():
-                config = json.loads(config_path.read_text(encoding="utf-8"))
-                audience_text = config.get("audience", "")
-                
-                if audience_text:
-                    # Display personas in markdown
-                    st.markdown(audience_text)
-                    
-                    # Edit option
-                    with st.expander("✏️ Редагувати персони"):
-                        edited_audience = st.text_area(
-                            "Опис аудиторії",
-                            value=audience_text,
-                            height=400,
-                            key="audience_settings"
-                        )
-                        if st.button("💾 Зберегти зміни"):
-                            config["audience"] = edited_audience
-                            config_path.write_text(json.dumps(config, indent=4, ensure_ascii=False), encoding="utf-8")
-                            st.success("Персони оновлено!")
-                            st.rerun()
-                else:
-                    st.info("Персони ще не створені. Створіть новий проект з персонами або додайте їх вручну.")
-                    
-                    # Option to generate personas for existing project
-                    if st.button("✨ Згенерувати персони для цього проекту"):
-                        with st.spinner("Створюю персони..."):
-                            try:
-                                brand_name = config.get("brand_name", selected_project)
-                                industry = config.get("industry", "")
-                                url = config.get("website_url", "")
-                                
-                                personas_text = strategist.generate_audience(
-                                    brand_name,
-                                    industry,
-                                    url,
-                                    business_model="B2C",
-                                    num_personas=2
-                                )
-                                config["audience"] = personas_text
-                                config_path.write_text(json.dumps(config, indent=4, ensure_ascii=False), encoding="utf-8")
-                                st.success("Персони згенеровано!")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Помилка: {e}")
-            else:
-                st.warning("Файл config.json не знайдено. Це старий проект без персон.")
-        except Exception as e:
-            st.error(f"Помилка завантаження персон: {e}")
-    
-    with tab3:
-        st.subheader("Завантаження Асетів")
-        uploaded_file = st.file_uploader("Завантажити зображення", type=["png", "jpg", "jpeg", "webp"])
-        if uploaded_file:
-            file_manager.save_asset(selected_project, uploaded_file.name, uploaded_file.read())
-            st.success(f"Файл {uploaded_file.name} завантажено!")
-            st.rerun()
-        
-        if assets:
-            st.write("**Завантажені асети:**")
-            for asset in assets:
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.text(asset)
-                with col2:
-                    if st.button("🗑️", key=f"del_{asset}"):
-                        file_manager.delete_asset(selected_project, asset)
-                        st.rerun()
-
-    with tab4:
-        st.subheader("🗺️ Customer Journey Map (CJM)")
-        st.info("Карта шляху клієнта допомагає зрозуміти досвід користувача на кожному етапі.")
-        
-        # Load config for CJM
-        try:
-            import json
-            config_path = file_manager.get_project_path(selected_project) / "config.json"
-            if config_path.exists():
-                config = json.loads(config_path.read_text(encoding="utf-8"))
-                current_cjm = config.get("cjm", "")
-                
-                if current_cjm:
-                    st.markdown(current_cjm)
-                    
-                    with st.expander("✏️ Редагувати CJM"):
-                        new_cjm = st.text_area("Markdown CJM", value=current_cjm, height=400)
-                        if st.button("💾 Зберегти CJM"):
-                            config["cjm"] = new_cjm
-                            config_path.write_text(json.dumps(config, indent=4, ensure_ascii=False), encoding="utf-8")
-                            st.success("CJM оновлено!")
-                            st.rerun()
-                else:
-                    st.write("CJM ще не створено.")
-                    if st.button("✨ Згенерувати CJM (ШІ)"):
-                        if not config.get("audience"):
-                            st.error("Спочатку створіть Персони (вкладка 'Персони')!")
-                        else:
-                            with st.spinner("Аналізую шлях клієнта..."):
-                                try:
-                                    cjm = strategist.generate_cjm(
-                                        config.get("brand_name"),
-                                        config.get("industry"),
-                                        config.get("audience")
-                                    )
-                                    config["cjm"] = cjm
-                                    config_path.write_text(json.dumps(config, indent=4, ensure_ascii=False), encoding="utf-8")
-                                    st.success("CJM створено!")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Помилка: {e}")
-            else:
-                st.warning("Конфігурація проекту не знайдена.")
-        except Exception as e:
-            st.error(f"Помилка завантаження CJM: {e}")
+    from modules.settings import render_settings
+    render_settings(selected_project, strategist, vector_db, file_manager, API_KEY)

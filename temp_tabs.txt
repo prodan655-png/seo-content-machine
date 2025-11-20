@@ -1,0 +1,94 @@
+
+    with tab5:
+        st.subheader("📤 Експорт Бренд-буку")
+        st.info("Згенеруйте та завантажте повний бренд-бук у форматі HTML.")
+        
+        if st.button("📄 Згенерувати Бренд-бук", type="primary"):
+            with st.spinner("Генерую документ..."):
+                try:
+                    # Gather data
+                    brand_name = selected_project
+                    
+                    # Get ToV
+                    tov_text = file_manager.read_file(selected_project, "tov.md")
+                    
+                    # Get Personas & CJM from config
+                    import json
+                    config_path = file_manager.get_project_path(selected_project) / "config.json"
+                    personas_text = ""
+                    cjm_text = ""
+                    
+                    if config_path.exists():
+                        config = json.loads(config_path.read_text(encoding="utf-8"))
+                        personas_text = config.get("audience", "")
+                        cjm_text = config.get("cjm", "")
+                    
+                    # Generate HTML
+                    from utils.report_generator import generate_brand_book_html
+                    html_content = generate_brand_book_html(brand_name, tov_text, personas_text, cjm_text)
+                    
+                    # Offer download
+                    st.success("✅ Бренд-бук успішно згенеровано!")
+                    st.download_button(
+                        label="💾 Завантажити Brand Book (HTML)",
+                        data=html_content,
+                        file_name=f"BrandBook_{brand_name}.html",
+                        mime="text/html"
+                    )
+                    
+                except Exception as e:
+                    st.error(f"Помилка генерації: {e}")
+
+    with tab6:
+        st.subheader("📚 База Знань (Sitemap)")
+        st.info("Завантажте карту сайту, щоб ШІ знав про ваші існуючі сторінки і міг робити внутрішню перелінковку.")
+        
+        sitemap_url = st.text_input("URL Sitemap.xml", placeholder="https://example.com/sitemap.xml")
+        
+        max_pages = 10000  # Full crawl
+        
+        if st.button("📥 Завантажити Sitemap (Full)", type="primary"):
+            if not sitemap_url:
+                st.error("Введіть URL!")
+            else:
+                with st.spinner("Сканую карту сайту у багатопотоковому режимі (це займе 1-2 хвилини)..."):
+                    try:
+                        from utils.sitemap_parser import ingest_sitemap
+                        
+                        # 1. Parse Sitemap
+                        st.info("Збираю всі посилання та сканую сторінки...")
+                        
+                        # Create a placeholder for progress
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        
+                        # Run ingestion
+                        df = ingest_sitemap(sitemap_url, max_pages=max_pages)
+                        
+                        progress_bar.progress(100)
+                        status_text.text("Готово!")
+                        
+                        if df.empty:
+                            st.error("Не знайдено жодної сторінки!")
+                        else:
+                            st.success(f"✅ Завантажено {len(df)} сторінок!")
+                            
+                            # 2. Save to CSV
+                            csv_path = file_manager.get_project_path(selected_project) / "pages.csv"
+                            df.to_csv(csv_path, index=False, encoding='utf-8')
+                            st.info(f"Збережено в: {csv_path}")
+                            
+                            # 3. Ingest into Vector DB
+                            with st.spinner("Індексую в векторну базу даних..."):
+                                vector_db.ingest_pages(selected_project, df)
+                            
+                            st.success("🎉 База знань оновлена! Тепер ШІ може робити внутрішню перелінковку.")
+                            
+                            # Show preview
+                            with st.expander("Переглянути завантажені сторінки"):
+                                st.dataframe(df[['url', 'title']].head(20))
+                    
+                    except Exception as e:
+                        st.error(f"Помилка: {e}")
+                        import traceback
+                        st.code(traceback.format_exc())
