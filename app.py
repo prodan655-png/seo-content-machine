@@ -178,6 +178,32 @@ if selected_option == "Create New...":
         if 'tov_editor' not in st.session_state:
             st.session_state['tov_editor'] = st.session_state.new_project_data.get('tov', '')
         
+        # --- COMPETITOR SPY ---
+        with st.expander("🕵️ Шпигувати за конкурентом (Beta)", expanded=False):
+            st.markdown("Введіть сайт конкурента, і ШІ визначить його стиль спілкування.")
+            comp_url = st.text_input("Сайт конкурента", placeholder="https://monobank.ua")
+            if st.button("🔍 Аналізувати стиль конкурента"):
+                if not comp_url:
+                    st.error("Введіть посилання!")
+                else:
+                    with st.spinner("Читаю думки конкурента..."):
+                        try:
+                            analysis = strategist.analyze_competitor_tov(comp_url)
+                            if "error" in analysis:
+                                st.error(f"Помилка: {analysis['error']}")
+                            else:
+                                # Update Session State for Widgets
+                                st.session_state['emotional_tone_selector'] = analysis.get('emotional_tone', 'Нейтральний')
+                                st.session_state['formality_level_selector'] = analysis.get('formality_level', 'Нейтральний')
+                                st.session_state['unique_trait_input'] = analysis.get('unique_trait', '')
+                                
+                                # Show insights
+                                st.success("Стиль успішно скопійовано!")
+                                st.json(analysis)
+                                st.rerun()
+                        except Exception as e:
+                            st.error(f"Критична помилка: {e}")
+
         # Pre-generation configuration
         with st.expander("⚙️ Налаштування генерації", expanded=True):
             st.markdown("**Допоможіть ШІ створити ідеальний ToV для вашого бренду:**")
@@ -196,12 +222,14 @@ if selected_option == "Create New...":
                     "Рівень формальності",
                     options=["Дуже офіційний", "Офіційний", "Нейтральний", "Дружній", "Дуже дружній"],
                     value="Нейтральний",
+                    key="formality_level_selector",
                     help="Наскільки формально ви спілкуєтесь з клієнтами?"
                 )
             
             unique_trait = st.text_input(
                 "Унікальна риса бренду",
                 placeholder="напр. 'Ми єдині, хто використовує органічні інгредієнти' або 'Працюємо 24/7'",
+                key="unique_trait_input",
                 help="Що робить ваш бренд особливим?"
             )
             

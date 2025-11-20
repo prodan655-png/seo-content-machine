@@ -494,3 +494,73 @@ class Strategist:
         response = self._generate_with_retry(prompt)
         print(f"CJM Generated (Length: {len(response.text)})")
         return response.text
+
+    def analyze_competitor_tov(self, url):
+        """
+        Analyzes a competitor's website to extract their Tone of Voice.
+        Returns a JSON object with emotional_tone, formality_level, unique_trait, values.
+        """
+        print(f"Analyzing Competitor ToV: {url}")
+        text_content = ""
+        
+        # 1. Scrape Content (Robust Method)
+        try:
+            with sync_playwright() as p:
+                try:
+                    browser = p.chromium.launch(headless=True)
+                except:
+                    os.system("playwright install chromium")
+                    browser = p.chromium.launch(headless=True)
+                
+                try:
+                    page = browser.new_page()
+                    page.goto(url, timeout=15000)
+                    text_content = page.inner_text('body')[:10000] # Get more text for analysis
+                    page.close()
+                except Exception as e:
+                    print(f"Playwright failed for {url}: {e}")
+                    # Fallback to Requests
+                    try:
+                        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+                        resp = requests.get(url, headers=headers, timeout=10)
+                        soup = BeautifulSoup(resp.content, 'html.parser')
+                        text_content = soup.get_text(separator=' ', strip=True)[:10000]
+                    except Exception as e2:
+                        print(f"Requests fallback failed: {e2}")
+                        return {"error": "Could not scrape website"}
+                finally:
+                    browser.close()
+        except Exception as e:
+            print(f"Scraping crashed: {e}")
+            return {"error": str(e)}
+
+        if not text_content:
+            return {"error": "Empty content"}
+
+        # 2. Analyze with AI
+        prompt = f"""
+        Analyze the text from a competitor's website and extract their Tone of Voice (ToV) characteristics.
+        
+        TEXT:
+        {text_content[:5000]}...
+        
+        TASK:
+        Return a JSON object with the following keys (values must be in UKRAINIAN):
+        - "emotional_tone": (e.g., "Дружній", "Професійний", "Зухвалий", "Турботливий")
+        - "formality_level": (e.g., "Низький (на 'ти')", "Середній", "Високий (на 'Ви')")
+        - "unique_trait": (e.g., "Використання сленгу", "Науковий підхід", "Гумор", "Мінімалізм")
+        - "values": (list of 3 key values inferred from text)
+        
+        JSON ONLY. NO MARKDOWN.
+        """
+        
+        response = self._generate_with_retry(prompt)
+        try:
+            return json.loads(response.text.replace('```json', '').replace('```', ''))
+        except:
+            return {
+                "emotional_tone": "Не визначено",
+                "formality_level": "Не визначено",
+                "unique_trait": "Не визначено",
+                "values": []
+            }
